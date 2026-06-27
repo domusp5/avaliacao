@@ -1351,7 +1351,7 @@ function App() {
       localStorage.removeItem("ft_draft");
     } catch {}
 
-    // Send to Google Sheets via GET request (avoids CORS issues with Apps Script)
+    // Send to Google Sheets via fetch (mode no-cors works cross-origin)
     const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzd3-vPLAZANVTamc-tjVe3wLXgu88mw073D0cp1MAZfre07TcD_uHIpTG9Iny-ZtYG4g/exec";
     try {
       const params = new URLSearchParams({
@@ -1362,8 +1362,8 @@ function App() {
         protocolo: protocol.label,
         pontuacoes: scores.map(s => `${s.label}: ${s.score !== null ? s.score : "—"} ${s.unit}`).join(" | "),
       });
-      const img = new Image();
-      img.src = SHEETS_URL + "?" + params.toString();
+      fetch(SHEETS_URL + "?" + params.toString(), { method: "GET", mode: "no-cors" })
+        .catch(() => {});
     } catch(e) {}
 
     // Check if more protocols in queue

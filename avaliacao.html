@@ -1,0 +1,1934 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+  <title>Avaliação Funcional — DOMUS Personal 5tudio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; background: #000000; }
+    body {
+      font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      color: #FFFFFF;
+      background: #000000;
+    }
+    input[type=range] {
+      -webkit-appearance: none; appearance: none;
+      width: 100%; height: 4px; border-radius: 0;
+      background: #222; outline: none;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; appearance: none;
+      width: 24px; height: 24px; border-radius: 50%;
+      background: #0077D6; cursor: pointer; border: 2px solid #000;
+    }
+    input[type=range]::-moz-range-thumb {
+      width: 24px; height: 24px; border-radius: 50%;
+      background: #0077D6; cursor: pointer; border: 2px solid #000;
+    }
+    button, input, select, textarea { font-family: 'Montserrat', sans-serif; -webkit-appearance: none; }
+    ::-webkit-scrollbar { width: 3px; }
+    ::-webkit-scrollbar-track { background: #000; }
+    ::-webkit-scrollbar-thumb { background: #222; }
+    #root { min-height: 100vh; }
+
+    /* DOMUS brand overrides injected globally */
+    .domus-header {
+      background: #000;
+      border-bottom: 1px solid #1a1a1a;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .domus-logo {
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #FFFFFF;
+    }
+    .domus-logo span { color: #0077D6; font-weight: 300; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin></script>
+  <script>
+const {
+  useState,
+  useEffect,
+  useRef
+} = React;
+
+// ── Storage shim (localStorage, sem backend) ──────────────────────────────
+window.storage = {
+  get: key => {
+    try {
+      const v = localStorage.getItem(key);
+      return v ? {
+        value: v
+      } : null;
+    } catch {
+      return null;
+    }
+  },
+  set: (key, value) => {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch {
+      return null;
+    }
+  }
+};
+
+// ─── MDC thresholds ───────────────────────────────────────────────────────────
+const MDC = {
+  IKDC: 9.2,
+  KOOS_PS: 8.5,
+  VAS: 1.5,
+  HOS_AVD: 6.7,
+  HOOS_PS: 7.2,
+  FAOS_SINTOMAS: 10,
+  FAOS_AVD: 9,
+  FAOS_ESPORTE: 11,
+  FAOS_QV: 10,
+  QUICKDASH: 15.9,
+  OSWESTRY: 10,
+  TAMPA: 5,
+  FESI: 4,
+  NDI: 10
+};
+
+// ─── Scoring ──────────────────────────────────────────────────────────────────
+const optIdx = (q, ans) => {
+  if (ans === undefined || ans === null) return undefined;
+  if (typeof ans === "number") return ans;
+  const i = q.options?.indexOf(ans);
+  return i >= 0 ? i : undefined;
+};
+function scoreVAS(answers) {
+  return parseFloat(answers[0] ?? 0);
+}
+function scoreIKDC(answers, qs) {
+  const vals = qs.map((q, i) => optIdx(q, answers[i]));
+  if (vals.some(v => v === undefined)) return null;
+  // Convert 0-based to 1-based, sum, normalize between min(10) and max(49)
+  const oneBased = vals.map(v => v + 1);
+  const sum = oneBased.reduce((a, b) => a + b, 0);
+  const score = Math.round((sum - 10) / (49 - 10) * 100);
+  return Math.max(0, Math.min(100, score));
+}
+function scoreQuickDASH(answers, qs) {
+  const vals = qs.map((q, i) => optIdx(q, answers[i]));
+  if (vals.some(v => v === undefined)) return null;
+  const sum = vals.reduce((a, b) => a + b + 1, 0); // 1-5 scale
+  return Math.max(0, Math.min(100, Math.round((sum / 11 - 1) / 4 * 100)));
+}
+function scoreKOOS_PS(answers, qs) {
+  const vals = qs.map((q, i) => optIdx(q, answers[i]));
+  if (vals.some(v => v === undefined)) return null;
+  return Math.max(0, Math.min(100, Math.round(100 - vals.reduce((a, b) => a + b, 0) / (4 * qs.length) * 100)));
+}
+function scoreHOOS_PS(answers, qs) {
+  const vals = qs.map((q, i) => optIdx(q, answers[i]));
+  if (vals.some(v => v === undefined)) return null;
+  return Math.max(0, Math.min(100, Math.round(100 - vals.reduce((a, b) => a + b, 0) / (4 * qs.length) * 100)));
+}
+function scoreFAOS(answers, qs, range) {
+  const [s, e] = range;
+  const vals = qs.slice(s, e + 1).map((q, i) => optIdx(q, answers[s + i]));
+  if (vals.some(v => v === undefined)) return null;
+  const n = e - s + 1;
+  return Math.max(0, Math.min(100, Math.round(100 - vals.reduce((a, b) => a + b, 0) / (4 * n) * 100)));
+}
+function scoreOswestry(answers, qs) {
+  const vals = qs.map((q, i) => optIdx(q, answers[i]));
+  if (vals.some(v => v === undefined)) return null;
+  return Math.max(0, Math.min(100, Math.round(vals.reduce((a, b) => a + b, 0) / (5 * qs.length) * 100)));
+}
+function scoreTampa(answers, qs) {
+  const vals = qs.map((q, i) => optIdx(q, answers[i]));
+  if (vals.some(v => v === undefined)) return null;
+  // TSK-17: items 4,8,12,16 (1-indexed) = indices 3,7,11,15 (0-indexed) are reversed
+  // Normal items: score = v+1 (1-4). Reversed: score = 4-v. Range: 17-68.
+  const reversed = [3, 7, 11, 15];
+  return vals.reduce((acc, v, i) => acc + (reversed.includes(i) ? 4 - v : v + 1), 0);
+}
+function scoreFESI(answers, qs) {
+  const vals = qs.map((q, i) => optIdx(q, answers[i]));
+  if (vals.some(v => v === undefined)) return null;
+  return vals.reduce((a, b) => a + b + 1, 0);
+}
+function scoreHOS_AVD(answers, qs) {
+  const vals = qs.map((q, i) => {
+    const v = answers[i];
+    if (v === "NA" || v === undefined) return null;
+    return optIdx(q, v);
+  });
+  const valid = vals.filter(v => v !== null);
+  if (valid.length === 0) return null;
+  // HOS: 0 = no difficulty (best), 4 = unable (worst). Higher score = better function.
+  return Math.max(0, Math.min(100, Math.round(100 - valid.reduce((a, b) => a + b, 0) / (4 * valid.length) * 100)));
+}
+function scoreNDI(answers, qs) {
+  const vals = qs.map((q, i) => optIdx(q, answers[i]));
+  if (vals.some(v => v === undefined)) return null;
+  return Math.max(0, Math.min(100, Math.round(vals.reduce((a, b) => a + b, 0) / (5 * qs.length) * 100)));
+}
+
+// ─── Questions ────────────────────────────────────────────────────────────────
+const VAS_Q = [{
+  id: "vas_0",
+  text: "Em uma escala de 0 a 10, qual é a sua dor no momento?",
+  type: "slider",
+  min: 0,
+  max: 10,
+  step: 0.5
+}];
+const IKDC_Q = [{
+  id: "i0",
+  text: "Qual é a atividade mais vigorosa que você consegue realizar sem que o joelho cause sintomas significativos?",
+  type: "radio",
+  options: ["Atividades muito extenuantes como saltar ou girar (basquete, futebol)", "Atividades extenuantes como trabalho físico pesado, esqui ou tênis", "Atividades moderadas como trabalho físico moderado, corrida ou jogging", "Atividades leves como caminhada ou afazeres domésticos", "Incapaz de realizar qualquer atividade acima"]
+}, {
+  id: "i1",
+  text: "Com que frequência você tem tido sintomas no joelho?",
+  type: "radio",
+  options: ["Nunca", "Raramente", "Às vezes", "Com frequência", "Sempre"]
+}, {
+  id: "i2",
+  text: "Qual é a gravidade da rigidez no joelho?",
+  type: "radio",
+  options: ["Nenhuma", "Leve", "Moderada", "Grave", "Muito grave"]
+}, {
+  id: "i3",
+  text: "Qual é a gravidade do inchaço no joelho?",
+  type: "radio",
+  options: ["Nenhum", "Leve", "Moderado", "Grave", "Muito grave"]
+}, {
+  id: "i4",
+  text: "Seu joelho trava ou fica preso durante o movimento?",
+  type: "radio",
+  options: ["Não", "Raramente", "Às vezes", "Com frequência", "Sempre"]
+}, {
+  id: "i5",
+  text: "Qual é a maior distância que você consegue caminhar?",
+  type: "radio",
+  options: ["Ilimitada", "Mais de 6 quadras", "De 3 a 6 quadras", "1 a 2 quadras", "Menos de 1 quadra"]
+}, {
+  id: "i6",
+  text: "Você sente dificuldade ao subir escadas?",
+  type: "radio",
+  options: ["Nenhuma dificuldade", "Dificuldade mínima", "Dificuldade moderada", "Dificuldade extrema", "Incapaz de realizar"]
+}, {
+  id: "i7",
+  text: "Você sente dificuldade ao agachar ou dobrar o joelho?",
+  type: "radio",
+  options: ["Nenhuma dificuldade", "Dificuldade mínima", "Dificuldade moderada", "Dificuldade extrema", "Incapaz de realizar"]
+}, {
+  id: "i8",
+  text: "Você consegue sentar com o joelho dobrado por 1 hora sem dor?",
+  type: "radio",
+  options: ["Nenhuma dificuldade", "Dificuldade mínima", "Dificuldade moderada", "Dificuldade extrema", "Incapaz de realizar"]
+}, {
+  id: "i9",
+  text: "Como você avalia sua função atual comparada a antes da lesão?",
+  type: "radio",
+  options: ["Normal", "Quase normal", "Anormal", "Muito anormal"]
+}];
+const KOOS_PS_Q = [{
+  id: "k0",
+  text: "Levantar de uma cadeira",
+  type: "radio",
+  options: ["Nenhuma dificuldade", "Leve", "Moderada", "Intensa", "Extrema"]
+}, {
+  id: "k1",
+  text: "Dobrar o joelho ao máximo",
+  type: "radio",
+  options: ["Nenhuma dificuldade", "Leve", "Moderada", "Intensa", "Extrema"]
+}, {
+  id: "k2",
+  text: "Agachar",
+  type: "radio",
+  options: ["Nenhuma dificuldade", "Leve", "Moderada", "Intensa", "Extrema"]
+}, {
+  id: "k3",
+  text: "Caminhar em superfície irregular",
+  type: "radio",
+  options: ["Nenhuma dificuldade", "Leve", "Moderada", "Intensa", "Extrema"]
+}, {
+  id: "k4",
+  text: "Subir e descer escadas",
+  type: "radio",
+  options: ["Nenhuma dificuldade", "Leve", "Moderada", "Intensa", "Extrema"]
+}, {
+  id: "k5",
+  text: "Correr em superfície plana — se não costuma correr, marque a dificuldade que imagina que teria",
+  type: "radio",
+  options: ["Nenhuma dificuldade", "Leve", "Moderada", "Intensa", "Extrema"]
+}, {
+  id: "k6",
+  text: "Girar o joelho com o pé fixo no chão",
+  type: "radio",
+  options: ["Nenhuma dificuldade", "Leve", "Moderada", "Intensa", "Extrema"]
+}];
+const HOS_AVD_Q = [{
+  id: "h0",
+  text: "Ficar em pé por longos períodos",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade mínima", "Dificuldade moderada", "Dificuldade extrema", "Incapaz", "NA"]
+}, {
+  id: "h1",
+  text: "Caminhar em superfície plana",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade mínima", "Dificuldade moderada", "Dificuldade extrema", "Incapaz", "NA"]
+}, {
+  id: "h2",
+  text: "Caminhar em superfície inclinada",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade mínima", "Dificuldade moderada", "Dificuldade extrema", "Incapaz", "NA"]
+}, {
+  id: "h3",
+  text: "Subir escadas",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade mínima", "Dificuldade moderada", "Dificuldade extrema", "Incapaz", "NA"]
+}, {
+  id: "h4",
+  text: "Descer escadas",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade mínima", "Dificuldade moderada", "Dificuldade extrema", "Incapaz", "NA"]
+}, {
+  id: "h5",
+  text: "Fazer passos laterais",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade mínima", "Dificuldade moderada", "Dificuldade extrema", "Incapaz", "NA"]
+}, {
+  id: "h6",
+  text: "Agachar abaixo do nível do joelho",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade mínima", "Dificuldade moderada", "Dificuldade extrema", "Incapaz", "NA"]
+}, {
+  id: "h7",
+  text: "Sentar com o quadril dobrado acima de 90°",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade mínima", "Dificuldade moderada", "Dificuldade extrema", "Incapaz", "NA"]
+}, {
+  id: "h8",
+  text: "Sentar-se por 15 minutos ou mais",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade mínima", "Dificuldade moderada", "Dificuldade extrema", "Incapaz", "NA"]
+}, {
+  id: "h9",
+  text: "Levantar de uma cadeira",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade mínima", "Dificuldade moderada", "Dificuldade extrema", "Incapaz", "NA"]
+}, {
+  id: "h10",
+  text: "Entrar e sair do carro",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade mínima", "Dificuldade moderada", "Dificuldade extrema", "Incapaz", "NA"]
+}, {
+  id: "h11",
+  text: "Andar por mais de 15 minutos",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade mínima", "Dificuldade moderada", "Dificuldade extrema", "Incapaz", "NA"]
+}, {
+  id: "h12",
+  text: "Calçar meias",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade mínima", "Dificuldade moderada", "Dificuldade extrema", "Incapaz", "NA"]
+}, {
+  id: "h13",
+  text: "Tirar as meias",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade mínima", "Dificuldade moderada", "Dificuldade extrema", "Incapaz", "NA"]
+}, {
+  id: "h14",
+  text: "Deitar na cama",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade mínima", "Dificuldade moderada", "Dificuldade extrema", "Incapaz", "NA"]
+}, {
+  id: "h15",
+  text: "Realizar atividades leves de casa",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade mínima", "Dificuldade moderada", "Dificuldade extrema", "Incapaz", "NA"]
+}, {
+  id: "h16",
+  text: "Realizar atividades pesadas de casa",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade mínima", "Dificuldade moderada", "Dificuldade extrema", "Incapaz", "NA"]
+}, {
+  id: "h17",
+  text: "Realizar atividades recreativas leves",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade mínima", "Dificuldade moderada", "Dificuldade extrema", "Incapaz", "NA"]
+}, {
+  id: "h18",
+  text: "Realizar atividades aeróbicas de impacto",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade mínima", "Dificuldade moderada", "Dificuldade extrema", "Incapaz", "NA"]
+}];
+const HOOS_PS_Q = [{
+  id: "hp0",
+  text: "Descer escadas",
+  type: "radio",
+  options: ["Nenhuma dificuldade", "Leve", "Moderada", "Intensa", "Extrema"]
+}, {
+  id: "hp1",
+  text: "Calçar meias",
+  type: "radio",
+  options: ["Nenhuma dificuldade", "Leve", "Moderada", "Intensa", "Extrema"]
+}, {
+  id: "hp2",
+  text: "Sentar",
+  type: "radio",
+  options: ["Nenhuma dificuldade", "Leve", "Moderada", "Intensa", "Extrema"]
+}, {
+  id: "hp3",
+  text: "Correr em superfície irregular — se não costuma correr, marque a dificuldade que imagina que teria",
+  type: "radio",
+  options: ["Nenhuma dificuldade", "Leve", "Moderada", "Intensa", "Extrema"]
+}, {
+  id: "hp4",
+  text: "Girar o quadril com o pé fixo no chão",
+  type: "radio",
+  options: ["Nenhuma dificuldade", "Leve", "Moderada", "Intensa", "Extrema"]
+}];
+const FAOS_Q = [{
+  id: "f0",
+  text: "Inchaço no tornozelo/pé",
+  type: "radio",
+  options: ["Nunca", "Raramente", "Às vezes", "Com frequência", "Sempre"]
+}, {
+  id: "f1",
+  text: "Estalos ou barulhos ao mover o tornozelo/pé",
+  type: "radio",
+  options: ["Nunca", "Raramente", "Às vezes", "Com frequência", "Sempre"]
+}, {
+  id: "f2",
+  text: "Rigidez ao acordar de manhã",
+  type: "radio",
+  options: ["Nenhuma", "Leve", "Moderada", "Intensa", "Extrema"]
+}, {
+  id: "f3",
+  text: "Rigidez após repouso durante o dia",
+  type: "radio",
+  options: ["Nenhuma", "Leve", "Moderada", "Intensa", "Extrema"]
+}, {
+  id: "f4",
+  text: "Dificuldade de amplitude de movimento do tornozelo/pé",
+  type: "radio",
+  options: ["Nenhuma", "Leve", "Moderada", "Intensa", "Extrema"]
+}, {
+  id: "f5",
+  text: "Subir escadas",
+  type: "radio",
+  options: ["Sem dificuldade", "Leve", "Moderada", "Intensa", "Extrema"]
+}, {
+  id: "f6",
+  text: "Descer escadas",
+  type: "radio",
+  options: ["Sem dificuldade", "Leve", "Moderada", "Intensa", "Extrema"]
+}, {
+  id: "f7",
+  text: "Levantar de uma cadeira",
+  type: "radio",
+  options: ["Sem dificuldade", "Leve", "Moderada", "Intensa", "Extrema"]
+}, {
+  id: "f8",
+  text: "Ficar em pé",
+  type: "radio",
+  options: ["Sem dificuldade", "Leve", "Moderada", "Intensa", "Extrema"]
+}, {
+  id: "f9",
+  text: "Agachar",
+  type: "radio",
+  options: ["Sem dificuldade", "Leve", "Moderada", "Intensa", "Extrema"]
+}, {
+  id: "f10",
+  text: "Caminhar em superfície plana",
+  type: "radio",
+  options: ["Sem dificuldade", "Leve", "Moderada", "Intensa", "Extrema"]
+}, {
+  id: "f11",
+  text: "Entrar e sair do carro",
+  type: "radio",
+  options: ["Sem dificuldade", "Leve", "Moderada", "Intensa", "Extrema"]
+}, {
+  id: "f12",
+  text: "Correr — se não costuma correr, marque a dificuldade que imagina que teria",
+  type: "radio",
+  options: ["Sem dificuldade", "Leve", "Moderada", "Intensa", "Extrema ou incapaz"]
+}, {
+  id: "f13",
+  text: "Saltar e pousar",
+  type: "radio",
+  options: ["Sem dificuldade", "Leve", "Moderada", "Intensa", "Extrema ou incapaz"]
+}, {
+  id: "f14",
+  text: "Parar e recomeçar rapidamente",
+  type: "radio",
+  options: ["Sem dificuldade", "Leve", "Moderada", "Intensa", "Extrema ou incapaz"]
+}, {
+  id: "f15",
+  text: "Mudar de direção rapidamente",
+  type: "radio",
+  options: ["Sem dificuldade", "Leve", "Moderada", "Intensa", "Extrema ou incapaz"]
+}, {
+  id: "f16",
+  text: "Atividades de impacto elevado — se não pratica, marque a dificuldade que imagina que teria",
+  type: "radio",
+  options: ["Sem dificuldade", "Leve", "Moderada", "Intensa", "Extrema ou incapaz"]
+}, {
+  id: "f17",
+  text: "Com que frequência seu tornozelo/pé te preocupa?",
+  type: "radio",
+  options: ["Nunca", "Mensalmente", "Semanalmente", "Diariamente", "Constantemente"]
+}, {
+  id: "f18",
+  text: "Você modificou seu estilo de vida por causa do tornozelo/pé?",
+  type: "radio",
+  options: ["Não", "Levemente", "Moderadamente", "Muito", "Totalmente"]
+}, {
+  id: "f19",
+  text: "Você confia no seu tornozelo/pé?",
+  type: "radio",
+  options: ["Completamente", "Muito", "Moderadamente", "Pouco", "Não confio"]
+}, {
+  id: "f20",
+  text: "Em geral, qual é a dificuldade com o tornozelo/pé?",
+  type: "radio",
+  options: ["Nenhuma", "Leve", "Moderada", "Intensa", "Extrema"]
+}];
+const QUICKDASH_Q = [{
+  id: "q0",
+  text: "Abrir um pote fechado ou novo",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade leve", "Dificuldade moderada", "Dificuldade intensa", "Incapaz"]
+}, {
+  id: "q1",
+  text: "Realizar trabalho doméstico pesado (lavar pisos, paredes)",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade leve", "Dificuldade moderada", "Dificuldade intensa", "Incapaz"]
+}, {
+  id: "q2",
+  text: "Carregar sacolas de compras ou pastas",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade leve", "Dificuldade moderada", "Dificuldade intensa", "Incapaz"]
+}, {
+  id: "q3",
+  text: "Lavar as costas",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade leve", "Dificuldade moderada", "Dificuldade intensa", "Incapaz"]
+}, {
+  id: "q4",
+  text: "Usar uma faca para cortar alimentos",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade leve", "Dificuldade moderada", "Dificuldade intensa", "Incapaz"]
+}, {
+  id: "q5",
+  text: "Atividades recreativas com força ou impacto nos braços (martelo, golfe, tênis) — se não pratica, marque a dificuldade que imagina que teria",
+  type: "radio",
+  options: ["Sem dificuldade", "Dificuldade leve", "Dificuldade moderada", "Dificuldade intensa", "Incapaz"]
+}, {
+  id: "q6",
+  text: "Interferência no trabalho ou atividades cotidianas por dor no braço/ombro/mão",
+  type: "radio",
+  options: ["Não interferiu", "Interferiu pouco", "Moderadamente", "Bastante", "Não pôde realizar"]
+}, {
+  id: "q7",
+  text: "Dor no braço, ombro ou mão",
+  type: "radio",
+  options: ["Nenhuma", "Leve", "Moderada", "Intensa", "Extrema"]
+}, {
+  id: "q8",
+  text: "Formigamento no braço, ombro ou mão",
+  type: "radio",
+  options: ["Nenhum", "Leve", "Moderado", "Intenso", "Extremo"]
+}, {
+  id: "q9",
+  text: "Dificuldade para dormir por causa do braço/ombro/mão",
+  type: "radio",
+  options: ["Nenhuma", "Leve", "Moderada", "Intensa", "Extrema"]
+}, {
+  id: "q10",
+  text: "Sentiu-se menos capaz ou confiante por causa do problema no braço/ombro/mão?",
+  type: "radio",
+  options: ["Discordo totalmente", "Discordo", "Neutro", "Concordo", "Concordo totalmente"]
+}];
+const OSWESTRY_Q = [{
+  id: "o0",
+  text: "Intensidade da dor atual",
+  type: "radio",
+  options: ["Sem dor no momento", "Dor muito leve", "Dor moderada", "Dor considerável", "Dor muito intensa", "Dor insuportável"]
+}, {
+  id: "o1",
+  text: "Cuidados pessoais (lavar-se, vestir-se)",
+  type: "radio",
+  options: ["Consigo normalmente sem dor", "Consigo normalmente, mas aumenta a dor", "É doloroso, sou mais lento e cuidadoso", "Preciso de alguma ajuda", "Preciso de ajuda todos os dias", "Não consigo me vestir ou lavar sozinho"]
+}, {
+  id: "o2",
+  text: "Levantamento de peso",
+  type: "radio",
+  options: ["Levanto objetos pesados sem dor", "Levanto objetos pesados com dor", "A dor impede levantar pesados, mas consigo médios", "Só consigo levantar objetos leves a médios bem posicionados", "Só consigo levantar objetos muito leves", "Não consigo levantar nada"]
+}, {
+  id: "o3",
+  text: "Caminhada",
+  type: "radio",
+  options: ["A dor não limita a distância", "Dor impede mais de 1,5 km", "Dor impede mais de 500 metros", "Dor impede mais de 100 metros", "Só caminho com bengala ou muletas", "Fico na cama a maior parte do tempo"]
+}, {
+  id: "o4",
+  text: "Posição sentada",
+  type: "radio",
+  options: ["Sento em qualquer cadeira pelo tempo que quiser", "Sento na cadeira preferida pelo tempo que quiser", "Dor impede sentar mais de 1 hora", "Dor impede sentar mais de 30 minutos", "Dor impede sentar mais de 10 minutos", "A dor me impede de sentar"]
+}, {
+  id: "o5",
+  text: "Posição em pé",
+  type: "radio",
+  options: ["Fico em pé pelo tempo que quiser sem dor", "Fico em pé pelo tempo que quiser, mas aumenta a dor", "Dor impede ficar em pé mais de 1 hora", "Dor impede ficar em pé mais de 30 minutos", "Dor impede ficar em pé mais de 10 minutos", "A dor me impede de ficar em pé"]
+}, {
+  id: "o6",
+  text: "Sono",
+  type: "radio",
+  options: ["Sono nunca perturbado pela dor", "Sono ocasionalmente perturbado", "Durmo menos de 6h por causa da dor", "Durmo menos de 4h por causa da dor", "Durmo menos de 2h por causa da dor", "A dor me impede totalmente de dormir"]
+}, {
+  id: "o7",
+  text: "Vida sexual (se não se aplica, pule esta questão marcando a primeira opção)",
+  type: "radio",
+  options: ["Normal, sem dor extra", "Normal, com alguma dor extra", "Quase normal, com muita dor", "Muito restringida pela dor", "Praticamente ausente por causa da dor", "Impossível por causa da dor"]
+}, {
+  id: "o8",
+  text: "Vida social",
+  type: "radio",
+  options: ["Normal, sem aumento da dor", "Normal, mas aumenta a dor", "Dor não impede atividades sociais, exceto as mais intensas", "Dor restringe saídas", "Vida social restrita ao lar", "Sem vida social por causa da dor"]
+}, {
+  id: "o9",
+  text: "Viagens",
+  type: "radio",
+  options: ["Viajo para qualquer lugar sem dor", "Viajo para qualquer lugar com dor", "Consigo viagens acima de 2 horas com dor intensa", "Dor restringe viagens a menos de 1 hora", "Dor restringe viagens a menos de 30 minutos", "A dor impede qualquer viagem"]
+}];
+const TAMPA_Q = [{
+  id: "t0",
+  text: "Tenho medo de que possa me machucar se fizer exercício",
+  type: "radio",
+  options: ["Discordo totalmente", "Discordo parcialmente", "Concordo parcialmente", "Concordo totalmente"]
+}, {
+  id: "t1",
+  text: "Se eu tentasse superar a dor, ela aumentaria",
+  type: "radio",
+  options: ["Discordo totalmente", "Discordo parcialmente", "Concordo parcialmente", "Concordo totalmente"]
+}, {
+  id: "t2",
+  text: "Meu corpo está me dizendo que algo perigoso está acontecendo",
+  type: "radio",
+  options: ["Discordo totalmente", "Discordo parcialmente", "Concordo parcialmente", "Concordo totalmente"]
+}, {
+  id: "t3",
+  text: "A dor que sinto significa que me machuquei",
+  type: "radio",
+  options: ["Discordo totalmente", "Discordo parcialmente", "Concordo parcialmente", "Concordo totalmente"]
+}, {
+  id: "t4",
+  text: "Não seria seguro para mim fazer atividade física",
+  type: "radio",
+  options: ["Discordo totalmente", "Discordo parcialmente", "Concordo parcialmente", "Concordo totalmente"]
+}, {
+  id: "t5",
+  text: "Não posso fazer tudo que outros fazem porque é fácil me machucar",
+  type: "radio",
+  options: ["Discordo totalmente", "Discordo parcialmente", "Concordo parcialmente", "Concordo totalmente"]
+}, {
+  id: "t6",
+  text: "Nenhum outro problema físico teria me causado tanta dor",
+  type: "radio",
+  options: ["Discordo totalmente", "Discordo parcialmente", "Concordo parcialmente", "Concordo totalmente"]
+}, {
+  id: "t7",
+  text: "A dor geralmente significa que lesionei meu corpo",
+  type: "radio",
+  options: ["Discordo totalmente", "Discordo parcialmente", "Concordo parcialmente", "Concordo totalmente"]
+}, {
+  id: "t8",
+  text: "Tenho medo de me machucar acidentalmente",
+  type: "radio",
+  options: ["Discordo totalmente", "Discordo parcialmente", "Concordo parcialmente", "Concordo totalmente"]
+}, {
+  id: "t9",
+  text: "A coisa mais segura é não fazer movimentos que causem dor",
+  type: "radio",
+  options: ["Discordo totalmente", "Discordo parcialmente", "Concordo parcialmente", "Concordo totalmente"]
+}, {
+  id: "t10",
+  text: "Não teria tanta dor se algo perigoso não estivesse acontecendo",
+  type: "radio",
+  options: ["Discordo totalmente", "Discordo parcialmente", "Concordo parcialmente", "Concordo totalmente"]
+}, {
+  id: "t11",
+  text: "Mesmo que a dor piore, não me fará mal se eu estiver ativo fisicamente",
+  type: "radio",
+  options: ["Discordo totalmente", "Discordo parcialmente", "Concordo parcialmente", "Concordo totalmente"]
+}, {
+  id: "t12",
+  text: "A dor me diz quando parar o exercício para não me machucar",
+  type: "radio",
+  options: ["Discordo totalmente", "Discordo parcialmente", "Concordo parcialmente", "Concordo totalmente"]
+}, {
+  id: "t13",
+  text: "Não é seguro para mim ser fisicamente ativo com minha condição atual",
+  type: "radio",
+  options: ["Discordo totalmente", "Discordo parcialmente", "Concordo parcialmente", "Concordo totalmente"]
+}, {
+  id: "t14",
+  text: "Não consigo fazer tudo que gostaria porque minha dor pode aumentar",
+  type: "radio",
+  options: ["Discordo totalmente", "Discordo parcialmente", "Concordo parcialmente", "Concordo totalmente"]
+}, {
+  id: "t15",
+  text: "Mesmo quando a dor aumenta, não acho que é perigosa",
+  type: "radio",
+  options: ["Discordo totalmente", "Discordo parcialmente", "Concordo parcialmente", "Concordo totalmente"]
+}, {
+  id: "t16",
+  text: "Ninguém deveria ser obrigado a fazer exercícios quando isso causa dor",
+  type: "radio",
+  options: ["Discordo totalmente", "Discordo parcialmente", "Concordo parcialmente", "Concordo totalmente"]
+}];
+const FESI_Q = [{
+  id: "fe0",
+  text: "Limpando a casa (passar pano, aspirar)",
+  type: "radio",
+  options: ["Nem um pouco preocupado", "Um pouco preocupado", "Muito preocupado", "Extremamente preocupado"]
+}, {
+  id: "fe1",
+  text: "Vestindo ou tirando a roupa",
+  type: "radio",
+  options: ["Nem um pouco preocupado", "Um pouco preocupado", "Muito preocupado", "Extremamente preocupado"]
+}, {
+  id: "fe2",
+  text: "Preparando refeições simples",
+  type: "radio",
+  options: ["Nem um pouco preocupado", "Um pouco preocupado", "Muito preocupado", "Extremamente preocupado"]
+}, {
+  id: "fe3",
+  text: "Tomando banho",
+  type: "radio",
+  options: ["Nem um pouco preocupado", "Um pouco preocupado", "Muito preocupado", "Extremamente preocupado"]
+}, {
+  id: "fe4",
+  text: "Indo às compras",
+  type: "radio",
+  options: ["Nem um pouco preocupado", "Um pouco preocupado", "Muito preocupado", "Extremamente preocupado"]
+}, {
+  id: "fe5",
+  text: "Sentando ou levantando de uma cadeira",
+  type: "radio",
+  options: ["Nem um pouco preocupado", "Um pouco preocupado", "Muito preocupado", "Extremamente preocupado"]
+}, {
+  id: "fe6",
+  text: "Subindo ou descendo escadas",
+  type: "radio",
+  options: ["Nem um pouco preocupado", "Um pouco preocupado", "Muito preocupado", "Extremamente preocupado"]
+}, {
+  id: "fe7",
+  text: "Caminhando pela vizinhança",
+  type: "radio",
+  options: ["Nem um pouco preocupado", "Um pouco preocupado", "Muito preocupado", "Extremamente preocupado"]
+}, {
+  id: "fe8",
+  text: "Pegando algo acima da cabeça ou do chão",
+  type: "radio",
+  options: ["Nem um pouco preocupado", "Um pouco preocupado", "Muito preocupado", "Extremamente preocupado"]
+}, {
+  id: "fe9",
+  text: "Indo atender o telefone rapidamente",
+  type: "radio",
+  options: ["Nem um pouco preocupado", "Um pouco preocupado", "Muito preocupado", "Extremamente preocupado"]
+}, {
+  id: "fe10",
+  text: "Andando sobre superfície escorregadia",
+  type: "radio",
+  options: ["Nem um pouco preocupado", "Um pouco preocupado", "Muito preocupado", "Extremamente preocupado"]
+}, {
+  id: "fe11",
+  text: "Visitando um amigo ou parente",
+  type: "radio",
+  options: ["Nem um pouco preocupado", "Um pouco preocupado", "Muito preocupado", "Extremamente preocupado"]
+}, {
+  id: "fe12",
+  text: "Andando em lugares cheios de gente",
+  type: "radio",
+  options: ["Nem um pouco preocupado", "Um pouco preocupado", "Muito preocupado", "Extremamente preocupado"]
+}, {
+  id: "fe13",
+  text: "Caminhando sobre superfície irregular",
+  type: "radio",
+  options: ["Nem um pouco preocupado", "Um pouco preocupado", "Muito preocupado", "Extremamente preocupado"]
+}, {
+  id: "fe14",
+  text: "Subindo ou descendo uma ladeira",
+  type: "radio",
+  options: ["Nem um pouco preocupado", "Um pouco preocupado", "Muito preocupado", "Extremamente preocupado"]
+}, {
+  id: "fe15",
+  text: "Indo a uma atividade social (ato religioso, reunião de família)",
+  type: "radio",
+  options: ["Nem um pouco preocupado", "Um pouco preocupado", "Muito preocupado", "Extremamente preocupado"]
+}];
+const NDI_Q = [{
+  id: "n0",
+  text: "Intensidade da dor cervical atual",
+  type: "radio",
+  options: ["Sem dor", "Dor muito leve", "Dor moderada", "Dor considerável", "Dor muito intensa", "Dor insuportável"]
+}, {
+  id: "n1",
+  text: "Cuidados pessoais (lavar-se, vestir-se)",
+  type: "radio",
+  options: ["Consigo normalmente sem dor", "Consigo normalmente, mas aumenta a dor", "É doloroso, sou mais lento", "Preciso de ajuda, mas faço a maior parte", "Preciso de ajuda todos os dias", "Não consigo me vestir ou lavar sozinho"]
+}, {
+  id: "n2",
+  text: "Levantamento de peso",
+  type: "radio",
+  options: ["Levanto objetos pesados sem dor", "Levanto pesados com dor", "A dor impede levantar pesados, mas consigo médios", "Só consigo leves a médios bem posicionados", "Só consigo objetos muito leves", "Não consigo levantar nada"]
+}, {
+  id: "n3",
+  text: "Leitura",
+  type: "radio",
+  options: ["Leio o quanto quiser sem dor", "Leio o quanto quiser com leve dor", "Leio o quanto quiser com dor moderada", "Não consigo ler por mais de 1 hora pela dor", "Não consigo ler por mais de 30 minutos pela dor", "Não consigo ler por causa da dor"]
+}, {
+  id: "n4",
+  text: "Dores de cabeça",
+  type: "radio",
+  options: ["Sem dor de cabeça", "Leve dor de cabeça às vezes", "Dor de cabeça moderada às vezes", "Dor de cabeça moderada com frequência", "Dor de cabeça intensa com frequência", "Dor de cabeça quase constante"]
+}, {
+  id: "n5",
+  text: "Concentração",
+  type: "radio",
+  options: ["Me concentro plenamente", "Me concentro plenamente com leve dificuldade", "Dificuldade moderada para me concentrar", "Dificuldade considerável para me concentrar", "Dificuldade muito grande para me concentrar", "Não consigo me concentrar"]
+}, {
+  id: "n6",
+  text: "Trabalho",
+  type: "radio",
+  options: ["Trabalho normalmente", "Só consigo meu trabalho habitual, mas não mais", "Consigo a maior parte, mas não tudo", "Não consigo meu trabalho habitual", "Mal consigo qualquer trabalho", "Não consigo trabalhar"]
+}, {
+  id: "n7",
+  text: "Dirigir — se não dirige, marque a primeira opção",
+  type: "radio",
+  options: ["Dirijo sem dor", "Dirijo o quanto quiser com leve dor", "Dirijo o quanto quiser com dor moderada", "Não dirijo por mais de 1 hora pela dor", "Não dirijo por mais de 30 minutos pela dor", "Não consigo dirigir por causa da dor"]
+}, {
+  id: "n8",
+  text: "Sono",
+  type: "radio",
+  options: ["Sono normal", "Sono levemente perturbado (até 1h insônia)", "Sono moderadamente perturbado (1 a 2h insônia)", "Sono muito perturbado (2 a 3h insônia)", "Sono extremamente perturbado (3 a 5h insônia)", "Não consigo dormir (mais de 5h insônia)"]
+}, {
+  id: "n9",
+  text: "Atividades de lazer",
+  type: "radio",
+  options: ["Faço todas as atividades sem dor", "Faço todas com alguma dor", "Faço a maioria das atividades", "Só consigo algumas atividades", "Mal consigo realizar qualquer lazer", "Sem lazer por causa da dor"]
+}];
+
+// ─── Protocol map ─────────────────────────────────────────────────────────────
+const PROTOCOLS = {
+  joelho: {
+    label: "Joelho",
+    icon: "🦵",
+    color: "#0077D6",
+    muscleNote: "Para lesão muscular na coxa ou posterior de coxa, use este protocolo.",
+    hint: "Responda pensando nos últimos 7 dias. Para atividades que você não pratica, responda como se fosse realizá-las.",
+    sections: [{
+      key: "VAS",
+      label: "Dor (VAS)",
+      qs: VAS_Q,
+      scoreFn: (a, qs) => scoreVAS(a),
+      unit: "/10"
+    }, {
+      key: "IKDC",
+      label: "Função do Joelho (IKDC)",
+      qs: IKDC_Q,
+      scoreFn: scoreIKDC,
+      unit: "/100"
+    }, {
+      key: "KOOS_PS",
+      label: "Sintomas do Joelho (KOOS-PS)",
+      qs: KOOS_PS_Q,
+      scoreFn: scoreKOOS_PS,
+      unit: "/100"
+    }]
+  },
+  quadril: {
+    label: "Quadril",
+    icon: "🦴",
+    color: "#8b5cf6",
+    muscleNote: "Para lesão muscular no glúteo ou adutores, use este protocolo.",
+    hint: "Responda pensando nos últimos 7 dias. Quando a opção 'NA' aparecer, marque-a se a atividade não se aplica ao seu estilo de vida.",
+    sections: [{
+      key: "VAS",
+      label: "Dor (VAS)",
+      qs: VAS_Q,
+      scoreFn: (a, qs) => scoreVAS(a),
+      unit: "/10"
+    }, {
+      key: "HOS_AVD",
+      label: "Função do Quadril — AVD (HOS)",
+      qs: HOS_AVD_Q,
+      scoreFn: scoreHOS_AVD,
+      unit: "/100"
+    }, {
+      key: "HOOS_PS",
+      label: "Sintomas do Quadril (HOOS-PS)",
+      qs: HOOS_PS_Q,
+      scoreFn: scoreHOOS_PS,
+      unit: "/100"
+    }]
+  },
+  tornozelo: {
+    label: "Tornozelo / Pé",
+    icon: "🦶",
+    color: "#0ea5e9",
+    muscleNote: "Para lesão muscular na panturrilha, use este protocolo.",
+    hint: "Responda pensando nos últimos 7 dias. Para atividades esportivas que não pratica, responda como se fosse realizá-las.",
+    sections: [{
+      key: "VAS",
+      label: "Dor (VAS)",
+      qs: VAS_Q,
+      scoreFn: (a, qs) => scoreVAS(a),
+      unit: "/10"
+    }, {
+      key: "FAOS_SINTOMAS",
+      label: "Sintomas (FAOS)",
+      qs: FAOS_Q,
+      scoreFn: (a, qs) => scoreFAOS(a, qs, [0, 4]),
+      unit: "/100"
+    }, {
+      key: "FAOS_AVD",
+      label: "Atividade Diária (FAOS)",
+      qs: FAOS_Q,
+      scoreFn: (a, qs) => scoreFAOS(a, qs, [5, 11]),
+      unit: "/100"
+    }, {
+      key: "FAOS_ESPORTE",
+      label: "Esporte (FAOS)",
+      qs: FAOS_Q,
+      scoreFn: (a, qs) => scoreFAOS(a, qs, [12, 16]),
+      unit: "/100"
+    }, {
+      key: "FAOS_QV",
+      label: "Qualidade de Vida (FAOS)",
+      qs: FAOS_Q,
+      scoreFn: (a, qs) => scoreFAOS(a, qs, [17, 20]),
+      unit: "/100"
+    }],
+    sharedQs: true
+  },
+  mmss: {
+    label: "Membro Superior (Ombro e Cotovelo)",
+    icon: "💪",
+    color: "#f59e0b",
+    muscleNote: "Para lesão muscular no manguito, bíceps ou tríceps, use este protocolo.",
+    hint: "Responda pensando nos últimos 7 dias. Para atividades que não pratica, responda como se fosse realizá-las.",
+    sections: [{
+      key: "VAS",
+      label: "Dor (VAS)",
+      qs: VAS_Q,
+      scoreFn: (a, qs) => scoreVAS(a),
+      unit: "/10"
+    }, {
+      key: "QUICKDASH",
+      label: "Função dos Membros Superiores (QuickDASH)",
+      qs: QUICKDASH_Q,
+      scoreFn: scoreQuickDASH,
+      unit: "% incapacidade"
+    }]
+  },
+  coluna: {
+    label: "Coluna Lombar",
+    icon: "🩻",
+    color: "#10b981",
+    hint: "Responda pensando nos últimos 7 dias. Inclua como a dor nas costas afeta sua vida cotidiana, não só os momentos de exercício.",
+    sections: [{
+      key: "VAS",
+      label: "Dor (VAS)",
+      qs: VAS_Q,
+      scoreFn: (a, qs) => scoreVAS(a),
+      unit: "/10"
+    }, {
+      key: "OSWESTRY",
+      label: "Incapacidade Lombar (Oswestry)",
+      qs: OSWESTRY_Q,
+      scoreFn: scoreOswestry,
+      unit: "% incapacidade"
+    }, {
+      key: "TAMPA",
+      label: "Relação com o Movimento (Tampa)",
+      qs: TAMPA_Q,
+      scoreFn: scoreTampa,
+      unit: "pts (17–68)"
+    }]
+  },
+  cervical: {
+    label: "Coluna Cervical",
+    icon: "🙇🏻‍♂️",
+    color: "#ec4899",
+    muscleNote: "Para lesão muscular no trapézio ou pescoço, use este protocolo.",
+    hint: "Responda pensando nos últimos 7 dias. Inclua como a dor no pescoço afeta sua vida cotidiana.",
+    sections: [{
+      key: "VAS",
+      label: "Dor (VAS)",
+      qs: VAS_Q,
+      scoreFn: (a, qs) => scoreVAS(a),
+      unit: "/10"
+    }, {
+      key: "NDI",
+      label: "Incapacidade Cervical (NDI)",
+      qs: NDI_Q,
+      scoreFn: scoreNDI,
+      unit: "% incapacidade"
+    }]
+  },
+  equilibrio: {
+    label: "Equilíbrio e Mobilidade",
+    icon: "🧑🏻‍🩰",
+    color: "#777777",
+    hint: "Para cada atividade abaixo, indique sua preocupação em perder o equilíbrio ou tropeçar, mesmo que você não realize essas atividades com frequência.",
+    sections: [{
+      key: "FESI",
+      label: "Equilíbrio e Mobilidade (FES-I)",
+      qs: FESI_Q,
+      scoreFn: scoreFESI,
+      unit: "pts (16–64)"
+    }]
+  }
+};
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function buildQuestionSets(protocol) {
+  if (!protocol) return [];
+  if (protocol.sharedQs) {
+    // FAOS: one big question bank, multiple sections scored differently
+    const vasSection = protocol.sections[0];
+    return [{
+      label: "Dor (VAS)",
+      qs: vasSection.qs,
+      keys: ["VAS"]
+    }, {
+      label: "Tornozelo / Pé (FAOS — 21 itens)",
+      qs: FAOS_Q,
+      keys: ["FAOS_SINTOMAS", "FAOS_AVD", "FAOS_ESPORTE", "FAOS_QV"]
+    }];
+  }
+  const seen = new Set();
+  return protocol.sections.map(sec => {
+    const qid = sec.qs[0]?.id?.split("_")[0] || sec.key;
+    if (seen.has(qid)) return null;
+    seen.add(qid);
+    return {
+      label: sec.label,
+      qs: sec.qs,
+      keys: [sec.key]
+    };
+  }).filter(Boolean);
+}
+function computeAllScores(protocol, answers) {
+  return protocol.sections.map(sec => {
+    const arr = sec.qs.map(q => answers[q.id]);
+    const score = sec.scoreFn(arr, sec.qs);
+    return {
+      key: sec.key,
+      label: sec.label,
+      score,
+      unit: sec.unit
+    };
+  });
+}
+function formatWhatsApp(name, cpf, protocol, protocolLabel, scores, date) {
+  const lines = [`📋 *Avaliação Funcional*`, `👤 *Nome:* ${name}`, `🆔 *CPF:* ${cpf}`, `📅 *Data:* ${date}`, `🏷️ *Protocolo:* ${protocolLabel}`, ``, `*Pontuações:*`, ...scores.map(s => `• ${s.label}: *${s.score !== null ? s.score : "—"}* ${s.unit}`), ``, `_DOMUS Personal 5tudio — domuspersonal.com.br_`];
+  return lines.join("\n");
+}
+
+// ─── Sparkline ────────────────────────────────────────────────────────────────
+function SparkLine({
+  history,
+  mdc
+}) {
+  if (!history || history.length < 2) return /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      color: "#475569"
+    }
+  }, "Aguardando 2ª avaliação");
+  const W = 160,
+    H = 48,
+    P = 6;
+  const vals = history.map(h => h.score);
+  const minV = Math.min(...vals),
+    maxV = Math.max(...vals);
+  const toX = i => P + i / (vals.length - 1) * (W - P * 2);
+  const toY = v => H - P - (v - minV) / (maxV - minV || 1) * (H - P * 2);
+  const pts = vals.map((v, i) => `${toX(i)},${toY(v)}`).join(" ");
+  const delta = vals[vals.length - 1] - vals[vals.length - 2];
+  const sig = Math.abs(delta) >= mdc;
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("svg", {
+    width: W,
+    height: H
+  }, /*#__PURE__*/React.createElement("polyline", {
+    points: pts,
+    fill: "none",
+    stroke: "#0077D6",
+    strokeWidth: "2"
+  }), vals.map((v, i) => /*#__PURE__*/React.createElement("circle", {
+    key: i,
+    cx: toX(i),
+    cy: toY(v),
+    r: "3",
+    fill: i === vals.length - 1 ? "#0077D6" : "#3399ff"
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: sig ? delta > 0 ? "#22c55e" : "#ef4444" : "#777777",
+      fontWeight: 700
+    }
+  }, delta > 0 ? "▲" : delta < 0 ? "▼" : "—", " ", Math.abs(delta).toFixed(1)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "#475569"
+    }
+  }, sig ? delta > 0 ? "Melhora real" : "Piora real" : "Variação normal")));
+}
+
+// ─── App ──────────────────────────────────────────────────────────────────────
+function App() {
+  const topRef = useRef(null);
+  const [screen, setScreen] = useState("home");
+  const [name, setName] = useState("");
+  const [cpf, setCpf] = useState("");
+  const [pendingProtocols, setPendingProtocols] = useState([]);
+  const [activeProtocolKey, setActiveProtocolKey] = useState(null);
+  const [queueIndex, setQueueIndex] = useState(0);
+  const [sectionIndex, setSectionIndex] = useState(0);
+  const [answers, setAnswers] = useState({});
+  const [sessionScores, setSessionScores] = useState([]);
+  const [allData, setAllData] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [whatsappText, setWhatsappText] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const C = {
+    bg: "#000000",
+    surface: "#111111",
+    card: "#161616",
+    border: "#2a2a2a",
+    text: "#FFFFFF",
+    muted: "#777777",
+    accent: "#0077D6",
+    accentL: "#3399ff"
+  };
+  const S = {
+    page: {
+      minHeight: "100vh",
+      background: C.bg,
+      color: C.text,
+      fontFamily: "system-ui, -apple-system, sans-serif"
+    },
+    header: {
+      background: C.surface,
+      borderBottom: `1px solid ${C.border}`,
+      padding: "14px 20px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      position: "sticky",
+      top: 0,
+      zIndex: 10
+    },
+    logo: {
+      fontWeight: 800,
+      fontSize: 17,
+      color: C.accentL,
+      letterSpacing: "-0.5px"
+    },
+    wrap: {
+      maxWidth: 460,
+      margin: "0 auto",
+      padding: "20px 16px 48px"
+    },
+    card: {
+      background: C.card,
+      border: `1px solid ${C.border}`,
+      borderRadius: 2,
+      padding: 18,
+      marginBottom: 14
+    },
+    input: {
+      width: "100%",
+      background: C.surface,
+      border: `1px solid ${C.border}`,
+      borderRadius: 2,
+      padding: "11px 14px",
+      color: C.text,
+      fontSize: 15,
+      outline: "none",
+      boxSizing: "border-box"
+    },
+    btn: disabled => ({
+      background: disabled ? "#1a1a1a" : C.accent,
+      color: disabled ? C.muted : "#fff",
+      border: "none",
+      borderRadius: 2,
+      padding: "13px 20px",
+      fontSize: 15,
+      fontWeight: 700,
+      cursor: disabled ? "default" : "pointer",
+      width: "100%",
+      marginTop: 10
+    }),
+    btnSm: {
+      background: "transparent",
+      color: C.accentL,
+      border: `1px solid ${C.accent}`,
+      borderRadius: 2,
+      padding: "9px 16px",
+      fontSize: 14,
+      fontWeight: 600,
+      cursor: "pointer",
+      width: "100%",
+      marginTop: 8
+    },
+    label: {
+      fontSize: 12,
+      color: C.muted,
+      marginBottom: 5,
+      display: "block",
+      textTransform: "uppercase",
+      letterSpacing: 0.5
+    },
+    opt: sel => ({
+      background: sel ? C.accent + "28" : C.surface,
+      border: `1.5px solid ${sel ? C.accent : C.border}`,
+      borderRadius: 2,
+      padding: "11px 14px",
+      marginBottom: 7,
+      cursor: "pointer",
+      color: sel ? C.accentL : C.text,
+      fontSize: 14,
+      textAlign: "left",
+      width: "100%",
+      transition: "all 0.12s"
+    }),
+    progress: {
+      height: 3,
+      background: C.border,
+      borderRadius: 2,
+      position: "sticky",
+      top: 52,
+      zIndex: 9
+    }
+  };
+  useEffect(() => {
+    async function load() {
+      try {
+        const r = await window.storage.get("ft_data");
+        if (r) setAllData(JSON.parse(r.value));
+      } catch {}
+      // Restore draft if exists
+      try {
+        const draft = localStorage.getItem("ft_draft");
+        if (draft) {
+          const d = JSON.parse(draft);
+          if (d.name && d.pendingProtocols?.length > 0 && d.activeProtocolKey) {
+            const resume = window.confirm(`Encontramos uma avaliação não enviada de ${d.name}. Deseja continuar de onde parou?`);
+            if (resume) {
+              setName(d.name);
+              setCpf(d.cpf || "");
+              setPendingProtocols(d.pendingProtocols);
+              setActiveProtocolKey(d.activeProtocolKey);
+              setQueueIndex(d.queueIndex || 0);
+              setSectionIndex(d.sectionIndex || 0);
+              setAnswers(d.answers || {});
+              setScreen("fill");
+            } else {
+              localStorage.removeItem("ft_draft");
+            }
+          }
+        }
+      } catch {}
+    }
+    load();
+  }, []);
+  function scrollTop() { window.scrollTo({ top: 0, behavior: "smooth" }); }
+  const protocol = activeProtocolKey ? PROTOCOLS[activeProtocolKey] : null;
+  const questionSets = protocol ? buildQuestionSets(protocol) : [];
+  const currentSet = questionSets[sectionIndex];
+  function setAns(id, val) {
+    const updated = {
+      ...answers,
+      [id]: val
+    };
+    setAnswers(updated);
+    // Auto-save draft progress
+    try {
+      localStorage.setItem("ft_draft", JSON.stringify({
+        name,
+        cpf,
+        pendingProtocols,
+        activeProtocolKey,
+        queueIndex,
+        sectionIndex,
+        answers: updated
+      }));
+    } catch {}
+  }
+  function isSetDone(set) {
+    return set.qs.every(q => {
+      if (q.type === "slider") return answers[q.id] !== undefined;
+      return answers[q.id] !== undefined;
+    });
+  }
+  function startQueue() {
+    if (!name.trim() || pendingProtocols.length === 0) return;
+    setQueueIndex(0);
+    setActiveProtocolKey(pendingProtocols[0]);
+    setAnswers({});
+    setSectionIndex(0);
+    setScreen("fill");
+    scrollTop();
+  }
+  async function finishSection() {
+    const isLastSection = sectionIndex === questionSets.length - 1;
+    if (!isLastSection) {
+      setSectionIndex(s => s + 1);
+      scrollTop();
+      return;
+    }
+    // Compute scores for this protocol
+    const scores = computeAllScores(protocol, answers);
+    const record = {
+      date: new Date().toISOString(),
+      scores,
+      answers
+    };
+    const pid = cpf.trim() || name.trim().toLowerCase().replace(/\s+/g, "_");
+    const newData = {
+      ...allData
+    };
+    if (!newData[pid]) newData[pid] = {
+      name: name.trim(),
+      cpf: cpf.trim(),
+      episodes: {}
+    };
+    const epKey = activeProtocolKey;
+    if (!newData[pid].episodes[epKey]) newData[pid].episodes[epKey] = {
+      protocol: activeProtocolKey,
+      records: []
+    };
+    newData[pid].episodes[epKey].records.push(record);
+    setSaving(true);
+    try {
+      await window.storage.set("ft_data", JSON.stringify(newData));
+    } catch {}
+    setSaving(false);
+    setAllData(newData);
+    try {
+      localStorage.removeItem("ft_draft");
+    } catch {}
+
+    // Send to Google Sheets via GET request (avoids CORS issues with Apps Script)
+    const SHEETS_URL = "https://script.google.com/macros/s/AKfycbzd3-vPLAZANVTamc-tjVe3wLXgu88mw073D0cp1MAZfre07TcD_uHIpTG9Iny-ZtYG4g/exec";
+    try {
+      const params = new URLSearchParams({
+        nome: name.trim(),
+        cpf: cpf.trim() || "—",
+        data: new Date().toLocaleDateString("pt-BR"),
+        hora: new Date().toLocaleTimeString("pt-BR"),
+        protocolo: protocol.label,
+        pontuacoes: scores.map(s => `${s.label}: ${s.score !== null ? s.score : "—"} ${s.unit}`).join(" | "),
+      });
+      const img = new Image();
+      img.src = SHEETS_URL + "?" + params.toString();
+    } catch(e) {}
+
+    // Check if more protocols in queue
+    const nextIdx = queueIndex + 1;
+    if (nextIdx < pendingProtocols.length) {
+      setQueueIndex(nextIdx);
+      setActiveProtocolKey(pendingProtocols[nextIdx]);
+      setAnswers({});
+      setSectionIndex(0);
+      scrollTop();
+    } else {
+      // All done — build WhatsApp message with ALL protocols from this session
+      const date = new Date().toLocaleDateString("pt-BR");
+      const allScores = scores;
+      const text = formatWhatsApp(name.trim(), cpf.trim() || "—", activeProtocolKey, protocol.label, allScores, date);
+      setWhatsappText(text);
+      setScreen("done");
+      scrollTop();
+    }
+  }
+  function sendWhatsApp() {
+    const encoded = encodeURIComponent(whatsappText);
+    window.open(`https://wa.me/?text=${encoded}`, "_blank");
+  }
+  function copyText() {
+    navigator.clipboard.writeText(whatsappText).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    }).catch(() => {
+      // fallback
+      const el = document.createElement("textarea");
+      el.value = whatsappText;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    });
+  }
+  function confirmExit() {
+    setShowExitConfirm(true);
+  }
+  function doExit() {
+    try {
+      localStorage.removeItem("ft_draft");
+    } catch {}
+    setShowExitConfirm(false);
+    setName("");
+    setCpf("");
+    setPendingProtocols([]);
+    setAnswers({});
+    setSectionIndex(0);
+    setQueueIndex(0);
+    setActiveProtocolKey(null);
+    setScreen("home");
+    scrollTop();
+  }
+  const pct = questionSets.length ? sectionIndex / questionSets.length * 100 : 0;
+
+  // ── HOME ────────────────────────────────────────────────────────────────────
+  if (screen === "home") return /*#__PURE__*/React.createElement("div", {
+    style: S.page
+  }, /*#__PURE__*/React.createElement("div", {
+    ref: topRef
+  }), /*#__PURE__*/React.createElement("div", {
+    style: S.header
+  }, /*#__PURE__*/React.createElement("span", {
+    style: S.logo
+  }, "⚡ FuncTrack"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setScreen("dashboard"),
+    style: {
+      background: "none",
+      border: "none",
+      color: C.muted,
+      cursor: "pointer",
+      fontSize: 13
+    }
+  }, "Histórico →")), /*#__PURE__*/React.createElement("div", {
+    style: S.wrap
+  }, /*#__PURE__*/React.createElement("h1", {
+    style: {
+      fontSize: 24,
+      fontWeight: 800,
+      marginBottom: 4,
+      marginTop: 16
+    }
+  }, "Avaliação Funcional"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      color: C.muted,
+      fontSize: 14,
+      marginBottom: 24,
+      marginTop: 0
+    }
+  }, "Preencha os dados abaixo e selecione a(s) região(ões) com queixa."), /*#__PURE__*/React.createElement("div", {
+    style: S.card
+  }, /*#__PURE__*/React.createElement("label", {
+    style: S.label
+  }, "Seu nome completo"), /*#__PURE__*/React.createElement("input", {
+    style: S.input,
+    placeholder: "Nome completo",
+    value: name,
+    onChange: e => setName(e.target.value)
+  }), /*#__PURE__*/React.createElement("label", {
+    style: {
+      ...S.label,
+      marginTop: 14
+    }
+  }, "CPF (para identificação)"), /*#__PURE__*/React.createElement("input", {
+    style: S.input,
+    placeholder: "000.000.000-00",
+    value: cpf,
+    onChange: e => setCpf(e.target.value),
+    inputMode: "numeric"
+  })), /*#__PURE__*/React.createElement("div", {
+    style: S.card
+  }, /*#__PURE__*/React.createElement("label", {
+    style: S.label
+  }, "Selecione a(s) região(ões) com queixa"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      color: C.muted,
+      fontSize: 12,
+      marginBottom: 12,
+      marginTop: 0
+    }
+  }, "Pode selecionar mais de uma. Cada região será avaliada separadamente, uma de cada vez. Se a sua queixa for uma lesão muscular, escolha a região articular mais próxima."), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr",
+      gap: 8
+    }
+  }, Object.entries(PROTOCOLS).map(([k, p]) => {
+    const sel = pendingProtocols.includes(k);
+    return /*#__PURE__*/React.createElement("button", {
+      key: k,
+      onClick: () => setPendingProtocols(sel ? pendingProtocols.filter(x => x !== k) : [...pendingProtocols, k]),
+      style: {
+        background: sel ? p.color + "28" : C.surface,
+        border: `1.5px solid ${sel ? p.color : C.border}`,
+        borderRadius: 2,
+        padding: "13px 10px",
+        cursor: "pointer",
+        color: sel ? p.color : C.text,
+        textAlign: "center",
+        transition: "all 0.15s"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 22,
+        marginBottom: 3
+      }
+    }, p.icon), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        fontWeight: 600,
+        lineHeight: 1.3
+      }
+    }, p.label));
+  }))), pendingProtocols.length > 1 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#000d1a",
+      border: "1px solid #2d4a2d",
+      borderRadius: 2,
+      padding: 14,
+      marginBottom: 14,
+      fontSize: 13,
+      color: "#0077D6"
+    }
+  }, "✓ Você selecionou ", pendingProtocols.length, " regiões. Os questionários serão aplicados um por vez, na ordem: ", pendingProtocols.map(k => PROTOCOLS[k].label).join(" → ")), /*#__PURE__*/React.createElement("button", {
+    style: S.btn(!name.trim() || pendingProtocols.length === 0),
+    disabled: !name.trim() || pendingProtocols.length === 0,
+    onClick: startQueue
+  }, "Iniciar avaliação →")));
+
+  // ── FILL ────────────────────────────────────────────────────────────────────
+  if (screen === "fill" && protocol && currentSet) {
+    const done = isSetDone(currentSet);
+    const isLast = sectionIndex === questionSets.length - 1;
+    const isLastProtocol = queueIndex === pendingProtocols.length - 1;
+    return /*#__PURE__*/React.createElement("div", {
+      style: S.page
+    }, /*#__PURE__*/React.createElement("div", {
+      ref: topRef
+    }), /*#__PURE__*/React.createElement("div", {
+      style: S.header
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        ...S.logo,
+        color: protocol.color
+      }
+    }, protocol.icon, " ", protocol.label), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 12,
+        color: C.muted
+      }
+    }, queueIndex + 1, "/", pendingProtocols.length, " protocolos · seção ", sectionIndex + 1, "/", questionSets.length)), /*#__PURE__*/React.createElement("div", {
+      style: {
+        ...S.progress
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        height: 3,
+        width: `${pct}%`,
+        background: protocol.color,
+        borderRadius: 2,
+        transition: "width 0.3s"
+      }
+    })), /*#__PURE__*/React.createElement("div", {
+      style: S.wrap
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: protocol.color + "18",
+        border: `1px solid ${protocol.color}44`,
+        borderRadius: 2,
+        padding: 14,
+        marginBottom: 18,
+        marginTop: 8
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 32,
+        marginBottom: 4
+      }
+    }, protocol.icon), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 700,
+        fontSize: 16,
+        color: protocol.color,
+        marginBottom: 4
+      }
+    }, "Você está respondendo sobre: ", protocol.label), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 13,
+        color: C.muted,
+        lineHeight: 1.5
+      }
+    }, protocol.hint)), /*#__PURE__*/React.createElement("h2", {
+      style: {
+        fontSize: 16,
+        fontWeight: 700,
+        color: C.accentL,
+        marginBottom: 16
+      }
+    }, currentSet.label), currentSet.qs.map((q, qi) => /*#__PURE__*/React.createElement("div", {
+      key: q.id,
+      style: {
+        ...S.card,
+        marginBottom: 10
+      }
+    }, /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 14,
+        fontWeight: 600,
+        marginBottom: 12,
+        marginTop: 0,
+        lineHeight: 1.45,
+        color: C.text
+      }
+    }, qi + 1, ". ", q.text), q.type === "slider" ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("input", {
+      type: "range",
+      min: q.min,
+      max: q.max,
+      step: q.step,
+      value: answers[q.id] ?? 0,
+      onChange: e => setAns(q.id, parseFloat(e.target.value)),
+      style: {
+        width: "100%",
+        accentColor: "#0077D6"
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        fontSize: 12,
+        color: C.muted,
+        marginTop: 4
+      }
+    }, /*#__PURE__*/React.createElement("span", null, "0 – Sem dor"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 20,
+        fontWeight: 800,
+        color: protocol.color
+      }
+    }, answers[q.id] ?? 0), /*#__PURE__*/React.createElement("span", null, "10 – Máxima"))) : q.options.map((opt, oi) => /*#__PURE__*/React.createElement("button", {
+      key: oi,
+      style: S.opt(answers[q.id] === opt),
+      onClick: () => setAns(q.id, opt)
+    }, opt)))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 10,
+        marginTop: 12
+      }
+    }, sectionIndex > 0 ? /*#__PURE__*/React.createElement("button", {
+      style: {
+        ...S.btnSm,
+        flex: 1
+      },
+      onClick: () => {
+        setSectionIndex(s => s - 1);
+        scrollTop();
+      }
+    }, "← Voltar") : /*#__PURE__*/React.createElement("button", {
+      style: {
+        ...S.btnSm,
+        flex: 1,
+        color: "#f87171",
+        borderColor: "#f87171"
+      },
+      onClick: confirmExit
+    }, "✕ Sair"), /*#__PURE__*/React.createElement("button", {
+      style: {
+        ...S.btn(!done || saving),
+        flex: 2
+      },
+      disabled: !done || saving,
+      onClick: finishSection
+    }, saving ? "Salvando..." : isLast ? isLastProtocol ? "Enviar avaliação ✓" : `Próxima região: ${PROTOCOLS[pendingProtocols[queueIndex + 1]]?.label} →` : "Próximo →")), showExitConfirm && /*#__PURE__*/React.createElement("div", {
+      style: {
+        position: "fixed",
+        inset: 0,
+        background: "#000a",
+        zIndex: 100,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: "#141414",
+        border: "1px solid #f87171",
+        borderRadius: 2,
+        padding: 24,
+        maxWidth: 340,
+        width: "100%"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 22,
+        marginBottom: 10
+      }
+    }, "⚠️"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 700,
+        fontSize: 16,
+        marginBottom: 8
+      }
+    }, "Sair da avaliação?"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 14,
+        color: C.muted,
+        marginBottom: 20,
+        lineHeight: 1.5
+      }
+    }, "Seu progresso está salvo automaticamente. Se sair agora, poderá continuar de onde parou quando reabrir a página."), /*#__PURE__*/React.createElement("button", {
+      style: {
+        ...S.btn(false),
+        background: "#ef4444",
+        marginBottom: 8
+      },
+      onClick: doExit
+    }, "Sair assim mesmo"), /*#__PURE__*/React.createElement("button", {
+      style: {
+        ...S.btnSm
+      },
+      onClick: () => setShowExitConfirm(false)
+    }, "Continuar avaliação")))));
+  }
+
+  // ── DONE ────────────────────────────────────────────────────────────────────
+  if (screen === "done") return /*#__PURE__*/React.createElement("div", {
+    style: S.page
+  }, /*#__PURE__*/React.createElement("div", {
+    ref: topRef
+  }), /*#__PURE__*/React.createElement("div", {
+    style: S.header
+  }, /*#__PURE__*/React.createElement("span", {
+    style: S.logo
+  }, "✓ Concluído")), /*#__PURE__*/React.createElement("div", {
+    style: S.wrap
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: "center",
+      padding: "32px 0 24px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 52,
+      marginBottom: 12
+    }
+  }, "✅"), /*#__PURE__*/React.createElement("h2", {
+    style: {
+      fontSize: 22,
+      fontWeight: 800,
+      marginBottom: 8
+    }
+  }, "Avaliação concluída!"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      color: C.muted,
+      fontSize: 14,
+      lineHeight: 1.6,
+      margin: 0
+    }
+  }, "Toque no botão abaixo para enviar os resultados diretamente pelo WhatsApp para o seu personal trainer.")), /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...S.btn(false),
+      background: "#0077D6",
+      fontSize: 16,
+      padding: "15px 20px"
+    },
+    onClick: sendWhatsApp
+  }, "📲 Enviar pelo WhatsApp"), /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...S.btn(false),
+      background: copied ? "#1e3a2e" : "#1f1f1f",
+      color: copied ? "#0077D6" : C.accentL,
+      border: `1px solid ${copied ? "#22c55e" : C.accent}`,
+      marginTop: 10,
+      fontSize: 15,
+      padding: "13px 20px"
+    },
+    onClick: copyText
+  }, copied ? "✓ Copiado!" : "📋 Copiar texto"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      ...S.card,
+      marginTop: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.muted,
+      marginBottom: 8
+    }
+  }, "Prévia do que será enviado:"), /*#__PURE__*/React.createElement("pre", {
+    style: {
+      fontSize: 11,
+      color: C.muted,
+      whiteSpace: "pre-wrap",
+      margin: 0,
+      lineHeight: 1.6
+    }
+  }, whatsappText)), /*#__PURE__*/React.createElement("button", {
+    style: S.btnSm,
+    onClick: () => {
+      setName("");
+      setCpf("");
+      setPendingProtocols([]);
+      setScreen("home");
+    }
+  }, "Nova avaliação")));
+
+  // ── DASHBOARD ───────────────────────────────────────────────────────────────
+  if (screen === "dashboard") {
+    const students = Object.values(allData);
+    return /*#__PURE__*/React.createElement("div", {
+      style: S.page
+    }, /*#__PURE__*/React.createElement("div", {
+      ref: topRef
+    }), /*#__PURE__*/React.createElement("div", {
+      style: S.header
+    }, /*#__PURE__*/React.createElement("span", {
+      style: S.logo
+    }, "📊 Histórico"), /*#__PURE__*/React.createElement("button", {
+      onClick: () => setScreen("home"),
+      style: {
+        background: "none",
+        border: "none",
+        color: C.muted,
+        cursor: "pointer",
+        fontSize: 13
+      }
+    }, "← Voltar")), /*#__PURE__*/React.createElement("div", {
+      style: S.wrap
+    }, students.length === 0 && /*#__PURE__*/React.createElement("p", {
+      style: {
+        color: C.muted,
+        textAlign: "center",
+        marginTop: 48
+      }
+    }, "Nenhum dado salvo ainda."), students.map((s, si) => /*#__PURE__*/React.createElement("div", {
+      key: si,
+      style: {
+        ...S.card,
+        marginBottom: 20
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontWeight: 700,
+        fontSize: 16,
+        marginBottom: 2
+      }
+    }, s.name), /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 12,
+        color: C.muted,
+        marginBottom: 14
+      }
+    }, "CPF: ", s.cpf || "—", " · ", Object.keys(s.episodes).length, " episódio(s)"), Object.values(s.episodes).map((ep, ei) => {
+      const pr = PROTOCOLS[ep.protocol];
+      if (!pr || ep.records.length === 0) return null;
+      const latest = ep.records[ep.records.length - 1];
+      return /*#__PURE__*/React.createElement("div", {
+        key: ei,
+        style: {
+          borderTop: `1px solid ${C.border}`,
+          paddingTop: 14,
+          marginTop: 12
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 13,
+          color: pr?.color,
+          fontWeight: 700,
+          marginBottom: 10
+        }
+      }, pr?.icon, " ", pr?.label), latest.scores.map(sc => {
+        const history = ep.records.map(r => ({
+          date: r.date,
+          score: r.scores.find(x => x.key === sc.key)?.score
+        })).filter(h => h.score !== null && h.score !== undefined);
+        return /*#__PURE__*/React.createElement("div", {
+          key: sc.key,
+          style: {
+            marginBottom: 14
+          }
+        }, /*#__PURE__*/React.createElement("div", {
+          style: {
+            fontSize: 12,
+            color: C.muted,
+            marginBottom: 3
+          }
+        }, sc.label), /*#__PURE__*/React.createElement("div", {
+          style: {
+            fontSize: 24,
+            fontWeight: 800,
+            color: pr?.color,
+            marginBottom: 6
+          }
+        }, sc.score !== null ? sc.score : "—", " ", /*#__PURE__*/React.createElement("span", {
+          style: {
+            fontSize: 12,
+            color: C.muted,
+            fontWeight: 400
+          }
+        }, sc.unit)), /*#__PURE__*/React.createElement(SparkLine, {
+          history: history,
+          mdc: MDC[sc.key] ?? 5
+        }), /*#__PURE__*/React.createElement("div", {
+          style: {
+            fontSize: 11,
+            color: C.muted,
+            marginTop: 4
+          }
+        }, history.length, " avaliação(ões) · última em ", new Date(latest.date).toLocaleDateString("pt-BR")));
+      }));
+    })))));
+  }
+  return null;
+}
+
+// Mount
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(App));
+
+  </script>
+</body>
+</html>
